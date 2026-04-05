@@ -1,0 +1,7 @@
+// TODO: Define gRPC service
+// service NodeRegistry {
+//   rpc Register(RegisterRequest) returns (NodeResponse);
+//   rpc List(Empty) returns (NodeList);
+//   rpc Get(GetRequest) returns (NodeResponse);
+//   rpc Delete(DeleteRequest) returns (Empty);
+// }
