@@ -19,8 +19,9 @@ from grpc_reflection.v1alpha import reflection
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://noderegistry:noderegistry@db:5432/noderegistry")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Retry DB connection until Postgres is ready
 engine = None
 for attempt in range(15):
     try:
@@ -36,6 +37,7 @@ for attempt in range(15):
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
 class Node(Base):
     __tablename__ = "nodes"
     id = Column(Integer, primary_key=True, index=True)
@@ -45,16 +47,16 @@ class Node(Base):
     status = Column(String, default="active")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
-        DateTime, 
-        default=lambda: datetime.now(timezone.utc), 
-        onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
+
 
 Base.metadata.create_all(bind=engine)
 
+
 class NodeRegistryServicer(node_registry_pb2_grpc.NodeRegistryServicer):
-    
-    # Función auxiliar para asegurar el formato ISO de las fechas
     def _to_proto(self, node):
         return node_registry_pb2.NodeResponse(
             id=node.id,
@@ -72,13 +74,13 @@ class NodeRegistryServicer(node_registry_pb2_grpc.NodeRegistryServicer):
             existing = db.query(Node).filter(Node.name == request.name).first()
             if existing:
                 context.set_code(grpc.StatusCode.ALREADY_EXISTS)
-                context.set_details('Node already exists')
+                context.set_details("Node already exists")
                 return node_registry_pb2.NodeResponse()
-            
             node = Node(name=request.name, host=request.host, port=request.port)
             db.add(node)
             db.commit()
             db.refresh(node)
+            logger.info(f"Registered node: {node.name}")
             return self._to_proto(node)
         finally:
             db.close()
@@ -97,7 +99,7 @@ class NodeRegistryServicer(node_registry_pb2_grpc.NodeRegistryServicer):
             node = db.query(Node).filter(Node.name == request.name).first()
             if not node:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
-                context.set_details('Node not found')
+                context.set_details("Node not found")
                 return node_registry_pb2.NodeResponse()
             return self._to_proto(node)
         finally:
@@ -109,27 +111,34 @@ class NodeRegistryServicer(node_registry_pb2_grpc.NodeRegistryServicer):
             node = db.query(Node).filter(Node.name == request.name).first()
             if not node:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
-                context.set_details('Node not found')
+                context.set_details("Node not found")
                 return node_registry_pb2.Empty()
-            
             node.status = "inactive"
             node.updated_at = datetime.now(timezone.utc)
             db.commit()
+            logger.info(f"Deleted node: {node.name}")
             return node_registry_pb2.Empty()
         finally:
             db.close()
 
+
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    node_registry_pb2_grpc.add_NodeRegistryServicer_to_server(NodeRegistryServicer(), server)
 
-    # Inicialización del Health Check Service nativo
+    # NodeRegistry service
+    node_registry_pb2_grpc.add_NodeRegistryServicer_to_server(
+        NodeRegistryServicer(), server
+    )
+
+    # Health check service
     health_servicer = HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
     health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
-    health_servicer.set("noderegistry.NodeRegistry", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set(
+        "noderegistry.NodeRegistry", health_pb2.HealthCheckResponse.SERVING
+    )
 
-    # Reflexión (para el testing del grader)
+    # Server reflection
     service_names = (
         node_registry_pb2.DESCRIPTOR.services_by_name["NodeRegistry"].full_name,
         health_pb2.DESCRIPTOR.services_by_name["Health"].full_name,
@@ -137,10 +146,11 @@ def serve():
     )
     reflection.enable_server_reflection(service_names, server)
 
-    server.add_insecure_port('[::]:50051')
+    server.add_insecure_port("[::]:50051")
     server.start()
-    logger.info("gRPC Server running on port 50051...")
+    logger.info("gRPC server started on port 50051")
     server.wait_for_termination()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     serve()

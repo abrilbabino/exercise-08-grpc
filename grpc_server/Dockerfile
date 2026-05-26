@@ -1,17 +1,19 @@
-FROM python:3.14-slim
+FROM python:3.12-slim
+
 WORKDIR /app
 
-COPY grpc_server/requirements.txt .
+COPY grpc_server/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar archivos
-COPY grpc_server/ ./grpc_server/
-COPY proto/ ./proto/
-COPY Makefile .
+COPY proto/ proto/
+RUN python -m grpc_tools.protoc \
+      -I proto \
+      --python_out=. \
+      --grpc_python_out=. \
+      proto/node_registry.proto
 
-# Compilar proto usando el comando del Makefile
-RUN apt-get update && apt-get install -y make && make proto
+COPY grpc_server/server.py server.py
 
-ENV PYTHONPATH=/app
 EXPOSE 50051
-CMD ["python", "grpc_server/server.py"]
+
+CMD ["python", "server.py"]

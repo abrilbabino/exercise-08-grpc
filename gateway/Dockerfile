@@ -1,17 +1,19 @@
-FROM python:3.14-slim
+FROM python:3.12-slim
+
 WORKDIR /app
 
-COPY gateway/requirements.txt .
+COPY gateway/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar archivos
-COPY gateway/ ./gateway/
-COPY proto/ ./proto/
-COPY Makefile .
+COPY proto/ proto/
+RUN python -m grpc_tools.protoc \
+      -I proto \
+      --python_out=. \
+      --grpc_python_out=. \
+      proto/node_registry.proto
 
-# Compilar proto
-RUN apt-get update && apt-get install -y make && make proto
+COPY gateway/app.py app.py
 
-ENV PYTHONPATH=/app
 EXPOSE 8080
-CMD ["uvicorn", "gateway.app:app", "--host", "0.0.0.0", "--port", "8080"]
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
