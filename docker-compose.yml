@@ -1,1 +1,31 @@
-# TODO: 3 services: db, grpc-server (50051), gateway (8080)
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: noderegistry
+      POSTGRES_PASSWORD: noderegistry
+      POSTGRES_DB: noderegistry
+    ports:
+      - "5432:5432"
+
+  grpc-server:
+    build:
+      context: .
+      dockerfile: grpc_server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://noderegistry:noderegistry@db:5432/noderegistry
+    ports:
+      - "50051:50051"
+    depends_on:
+      - db
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - grpc-server
